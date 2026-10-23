@@ -109,7 +109,20 @@ export default function VoteHistory({ proposals }: Props) {
     return votes.map(({ proposal, vote }, index) => (
       <tr key={`${proposal.id}-${index}`}>
         <td>{proposal.title}</td>
-        <td aria-label={ariaLabelForVoteType(vote.type)}>{vote.type}</td>
+        <td aria-label={ariaLabelForVoteType(vote.type)}>
+          {vote.type}
+          {/* #329: flag votes claimed on this address's behalf by a delegate. */}
+          {vote.viaDelegate && (
+            <span
+              className="delegation-badge"
+              title={`Cast by delegate ${vote.viaDelegate}`}
+              aria-label={`Vote cast via delegate ${vote.viaDelegate}`}
+            >
+              {" "}
+              (via delegate)
+            </span>
+          )}
+        </td>
         <td>{vote.weight}</td>
         <td>
           <span className={statusClass(proposal.state)}>{proposal.state}</span>

@@ -66,6 +66,7 @@ export function NavHeader({ walletSlot }: NavHeaderProps) {
               <li><NavLink to="/leaderboard" className={({ isActive }) => isActive ? 'nav-active' : undefined}>Leaderboard</NavLink></li>
               <li><NavLink to="/dashboard" className={({ isActive }) => isActive ? 'nav-active' : undefined}>Dashboard</NavLink></li>
               <li><NavLink to="/history" className={({ isActive }) => isActive ? 'nav-active' : undefined}>Vote History</NavLink></li>
+              <li><NavLink to="/profile" className={({ isActive }) => isActive ? 'nav-active' : undefined}>Profile</NavLink></li>
             </ul>
           </nav>
 
@@ -99,6 +100,7 @@ export function NavHeader({ walletSlot }: NavHeaderProps) {
             <li><NavLink to="/leaderboard" onClick={() => setMenuOpen(false)}>Leaderboard</NavLink></li>
             <li><NavLink to="/dashboard" onClick={() => setMenuOpen(false)}>Dashboard</NavLink></li>
             <li><NavLink to="/history" onClick={() => setMenuOpen(false)}>Vote History</NavLink></li>
+            <li><NavLink to="/profile" onClick={() => setMenuOpen(false)}>Profile</NavLink></li>
           </ul>
         </nav>
       </div>

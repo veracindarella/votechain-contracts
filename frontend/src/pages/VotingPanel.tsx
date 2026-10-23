@@ -90,15 +90,18 @@ function secondsUntil(endTime: number): number {
 }
 
 function formatDuration(secs: number): string {
-  if (secs <= 0) return "Ended";
+  // #330: countdown resolution scales with how much time is left so the
+  // display stays readable — days/hours/minutes/seconds when there is more
+  // than a day left, minutes/seconds once under an hour, and an explicit
+  // "Voting closed" state once end_time has passed.
+  if (secs <= 0) return "Voting closed";
   const d = Math.floor(secs / 86400);
   const h = Math.floor((secs % 86400) / 3600);
   const m = Math.floor((secs % 3600) / 60);
   const s = secs % 60;
-  if (d > 0) return `${d}d ${h}h remaining`;
-  if (h > 0) return `${h}h ${m}m remaining`;
-  if (m > 0) return `${m}m ${s}s remaining`;
-  return `${s}s remaining`;
+  if (secs > 86400) return `${d}d ${h}h ${m}m ${s}s remaining`;
+  if (secs >= 3600) return `${h}h ${m}m remaining`;
+  return `${m}m ${s}s remaining`;
 }
 
 function fmt(n: number): string {

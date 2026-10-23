@@ -70,6 +70,16 @@ export interface CreateProposalParams {
   description: string;
   quorum: bigint;
   durationSeconds: bigint;
+  /**
+   * Optional IPFS CID holding the full proposal description (#331).
+   *
+   * Soroban limits on-chain strings to 1024 bytes, so when this is set the
+   * SDK stores `description` as a short on-chain excerpt followed by a
+   * `\n\nipfs:<cid>` marker instead of the full text; integrators render the
+   * complete content by fetching this CID off-chain (see
+   * `frontend/src/utils/ipfs.ts`'s `fetchFromIpfs`/`decodeFullDescriptionCid`).
+   */
+  fullDescriptionCid?: string;
 }
 
 /** Parameters accepted by {@link VoteChainClient.castVote}. */

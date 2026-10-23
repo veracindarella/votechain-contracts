@@ -46,6 +46,12 @@ export interface VoteRecord {
    * explain their rationale. Not validated on-chain — see issue #103.
    */
   commentHash?: string | null;
+  /**
+   * When this vote's weight was claimed on behalf of `address` by a delegate
+   * (via `cast_vote_with_delegators`), this holds the delegate's address
+   * that cast the vote. `null`/absent means `address` voted directly (#329).
+   */
+  viaDelegate?: string | null;
 }
 
 export interface Proposal {
