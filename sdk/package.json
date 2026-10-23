@@ -25,7 +25,7 @@
     "test:contract": "vitest run --config vitest.contract.config.ts"
   },
   "dependencies": {
-    "@stellar/stellar-sdk": "13.1.0"
+    "@stellar/stellar-sdk": "17.2.1"
   },
   "peerDependencies": {
     "@stellar/freighter-api": ">=2.0.0"
