@@ -63,7 +63,7 @@ services:
       start_period: 3s
 
   stellar-node:
-    image: stellar/quickstart:latest@sha256:4f8dfd693deba57fddef7f0bc722e4782c2e606c8675e3adc5438cebae249295
+    image: stellar/quickstart:latest@sha256:a61ce821add98adb4f3e3d6e757b2615dd169a2b39c7e30cd47cfa95074f97d9
     ports:
       - "8000:8000"
     environment:
