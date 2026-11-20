@@ -18,6 +18,7 @@ import { useTranslation } from "react-i18next";
 import QuorumProgressBar from "../components/QuorumProgressBar";
 import { useProposals } from "../context/ProposalContext";
 import { decodeFullDescriptionCid, fetchFromIpfs } from "../utils/ipfs";
+import { sanitizeText } from "../utils/sanitize";
 
 /**
  * Renders a proposal's description, resolving the full text from IPFS when
@@ -55,16 +56,18 @@ function ProposalDescription({ description }: { description: string | undefined 
   }, [decoded?.cid]);
 
   if (!description) return null;
-  if (!decoded) return <p className="proposal-description">{description}</p>;
+  if (!decoded) return <p className="proposal-description">{sanitizeText(description)}</p>;
 
   return (
     <div className="proposal-description" aria-live="polite">
-      <p>{decoded.excerpt.trim()}</p>
+      <p>{sanitizeText(decoded.excerpt.trim())}</p>
       {loading && <p role="status">Loading full description from IPFS…</p>}
-      {!loading && fullText && <p className="proposal-description-full">{fullText}</p>}
+      {!loading && fullText && (
+        <p className="proposal-description-full">{sanitizeText(fullText)}</p>
+      )}
       {!loading && error && (
         <p role="alert" className="error-state">
-          {error} (CID: {decoded.cid})
+          {sanitizeText(error)} (CID: {sanitizeText(decoded.cid)})
         </p>
       )}
     </div>

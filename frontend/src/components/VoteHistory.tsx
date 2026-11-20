@@ -17,6 +17,7 @@ import type { Proposal, ProposalState, VoteRecord } from '../types';
 import { generateCsv } from '../utils/csv';
 import { isValidStellarAddress, isStellarAddressEmpty } from '../utils/stellarAddress';
 import { hasComment, ipfsGatewayUrl } from '../utils/ipfs';
+import { sanitizeText } from '../utils/sanitize';
 
 interface Props {
   proposals: Proposal[];
@@ -108,7 +109,7 @@ export default function VoteHistory({ proposals }: Props) {
     }
     return votes.map(({ proposal, vote }, index) => (
       <tr key={`${proposal.id}-${index}`}>
-        <td>{proposal.title}</td>
+        <td>{sanitizeText(proposal.title)}</td>
         <td aria-label={ariaLabelForVoteType(vote.type)}>
           {vote.type}
           {/* #329: flag votes claimed on this address's behalf by a delegate. */}
@@ -135,7 +136,7 @@ export default function VoteHistory({ proposals }: Props) {
               href={ipfsGatewayUrl(vote.commentHash)}
               target="_blank"
               rel="noopener noreferrer"
-              aria-label={`View voter's comment for ${proposal.title}`}
+              aria-label={`View voter's comment for ${sanitizeText(proposal.title)}`}
             >
               View comment
             </a>
