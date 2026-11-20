@@ -16,12 +16,6 @@ tracing = { version = "0.1.41" }
 tracing-subscriber = { version = "0.3.19" }
 anyhow = { version = "1.0.98" }
 
-[profile.dev]
-# Enable SQLx compile-time query verification in development
-# to catch SQL errors early and verify parameterization at compile time.
-# Set SQLX_OFFLINE=false when running `cargo check` or `cargo build`
-# to perform online verification against the PostgreSQL database.
-rustflags = []
 [dev-dependencies]
 testcontainers-modules = { version = "0.11", features = ["postgres"] }
 tracing-test = { version = "0.2" }

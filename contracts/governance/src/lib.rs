@@ -34,6 +34,8 @@ mod test_string_boundaries;
 mod test_already_voted_regression;
 #[cfg(test)]
 mod test_factories;
+#[cfg(test)]
+mod test_migration;
 
 use soroban_sdk::{contract, contractclient, contractimpl, token, Address, Env, String, Vec};
 use types::{ConfigKey, ContractConfig, ContractError, ContractState, ProposalState, ProposalType, Proposal, ProposalTemplate, TemplateProposalParams, Vote, VoteRecord};

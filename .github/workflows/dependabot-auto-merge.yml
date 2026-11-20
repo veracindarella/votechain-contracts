@@ -1,7 +1,16 @@
 name: Dependabot Auto-Merge
 
-# Automatically merge Dependabot patch-level PRs that pass CI.
-# Triggered when Dependabot opens or re-runs a PR.
+# Safety-gated auto-merge policy for Dependabot PRs.
+#
+# Policy
+#   * Eligible: dev/test dependencies only (`dependency-type` ends with
+#     `:development`), patch-level, and only once CI is green. The actual
+#     merge is deferred with `gh pr merge --auto`, so it happens after every
+#     required status check has passed.
+#   * Production dependencies are never auto-merged; they are routed to
+#     reviewers for manual review.
+#   * Security advisories always get a tracked PR that is routed to the
+#     security reviewers and is never auto-merged (even for dev deps).
 on:
   pull_request:
     types: [opened, synchronize, reopened]
@@ -12,7 +21,7 @@ permissions:
 
 jobs:
   auto-merge:
-    name: Auto-merge patch updates
+    name: Triage Dependabot PR
     runs-on: ubuntu-latest
     # Only act on Dependabot PRs
     if: github.actor == 'dependabot[bot]'
@@ -23,16 +32,118 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      # Auto-merge patch-level npm and Cargo updates only.
-      # Minor and major updates require human review.
-      - name: Auto-merge patch updates
+      # Classify the PR as one of: security | production | dev | other.
+      #   * security   - a security advisory update (alert-state / GHSA id set)
+      #   * dev        - a dev/test dependency (`*:development`)
+      #   * production - a runtime/production dependency
+      #   * other      - no dependency-type reported (e.g. github-actions, docker)
+      - name: Classify update
+        id: classify
+        env:
+          DEPENDENCY_TYPE: ${{ steps.meta.outputs.dependency-type }}
+          ALERT_STATE: ${{ steps.meta.outputs.alert-state }}
+          GHSA_ID: ${{ steps.meta.outputs.ghsa-id }}
+        run: |
+          set -euo pipefail
+
+          is_security=false
+          if [ -n "${ALERT_STATE:-}" ] || [ -n "${GHSA_ID:-}" ]; then
+            is_security=true
+          fi
+
+          is_dev=false
+          if [[ "${DEPENDENCY_TYPE:-}" == *":development" ]]; then
+            is_dev=true
+          fi
+
+          if [ "$is_security" = "true" ]; then
+            category=security
+          elif [ "$is_dev" = "true" ]; then
+            category=dev
+          elif [ -n "${DEPENDENCY_TYPE:-}" ]; then
+            category=production
+          else
+            category=other
+          fi
+
+          echo "dependency-type=${DEPENDENCY_TYPE:-<none>}"
+          echo "category=$category"
+          echo "category=$category" >> "$GITHUB_OUTPUT"
+
+      # Security advisories: open a tracked PR, route it to the security
+      # reviewers, and never auto-merge it.
+      - name: Route security advisory to reviewers
         if: |
-          steps.meta.outputs.update-type == 'version-update:semver-patch' &&
-          (steps.meta.outputs.package-ecosystem == 'npm' ||
-           steps.meta.outputs.package-ecosystem == 'cargo')
+          steps.classify.outputs.category == 'security' &&
+          github.event.action != 'synchronize'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.html_url }}
         run: |
-          echo "Approving and enabling auto-merge for patch update PR #${{ github.event.pull_request.number }}"
-          gh pr review --approve "${{ github.event.pull_request.html_url }}"
-          gh pr merge --auto --squash "${{ github.event.pull_request.html_url }}"
+          set -euo pipefail
+          gh pr edit "$PR" --add-reviewer "veracindarella/security-team" ||
+            echo "::warning::Reviewer may already be requested"
+          gh pr comment "$PR" --body "$(cat <<'EOF'
+          Security advisory update detected.
+
+          This PR resolves a security advisory and is **not eligible for auto-merge**.
+          It has been routed to the security team for manual review.
+
+          Requirements: security review and green CI before merge.
+          EOF
+          )" --edit-last --create-if-none
+
+      # Production dependencies: require manual review, never auto-merge.
+      - name: Route production dependency to reviewers
+        if: |
+          steps.classify.outputs.category == 'production' &&
+          github.event.action != 'synchronize'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.html_url }}
+        run: |
+          set -euo pipefail
+          gh pr edit "$PR" --add-reviewer "veracindarella/maintainers" ||
+            echo "::warning::Reviewer may already be requested"
+          gh pr comment "$PR" --body "$(cat <<'EOF'
+          Production dependency update detected.
+
+          Production/runtime dependencies are **not eligible for auto-merge** and
+          require manual review by a maintainer.
+          EOF
+          )" --edit-last --create-if-none
+
+      # Dev/test dependencies: only enable auto-merge when CI is not failing.
+      - name: Check CI status
+        id: ci
+        if: |
+          steps.classify.outputs.category == 'dev' &&
+          steps.meta.outputs.update-type == 'version-update:semver-patch'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.html_url }}
+        run: |
+          set -euo pipefail
+          # Note: pending/in-progress checks are allowed here; `gh pr merge --auto`
+          # defers the merge until they complete. Only failing checks block it.
+          states=$(gh pr checks "$PR" --json state --jq '.[].state' 2>/dev/null || true)
+          if echo "$states" | grep -qiE 'FAILURE|ERROR|CANCELLED|TIMED_OUT|STARTUP_FAILURE|ACTION_REQUIRED'; then
+            echo "ci_ok=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ci_ok=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Enable auto-merge for dev/test dependency
+        if: |
+          steps.classify.outputs.category == 'dev' &&
+          steps.meta.outputs.update-type == 'version-update:semver-patch' &&
+          steps.ci.outputs.ci_ok == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.html_url }}
+        run: |
+          set -euo pipefail
+          echo "Approving and enabling auto-merge for dev/test patch update PR #${{ github.event.pull_request.number }}"
+          gh pr review --approve "$PR" ||
+            echo "::warning::Could not approve (already approved); still enabling auto-merge"
+          gh pr merge --auto --squash "$PR"
