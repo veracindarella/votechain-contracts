@@ -17,7 +17,6 @@ import {
   BrowserRouter,
   Routes,
   Route,
-  Navigate,
   useLocation,
 } from "react-router-dom";
 import { ErrorBoundary } from "./components/ErrorBoundary";
@@ -39,6 +38,7 @@ const GovernanceDashboard = React.lazy(() =>
 const Simulate = React.lazy(() => import('./pages/Simulate'));
 const CreateProposal = React.lazy(() => import('./pages/CreateProposal'));
 const Leaderboard = React.lazy(() => import('./pages/Leaderboard'));
+const NotFound = React.lazy(() => import('./pages/NotFound'));
 
 /** Updates the document title on route change (issue #16 — browser history / a11y). */
 function PageTitle({ title }: { title: string }) {
@@ -124,7 +124,15 @@ function AppRoutes() {
                 </ErrorBoundary>
               }
             />
-            <Route path="*" element={<Navigate to="/" replace />} />
+            <Route
+              path="*"
+              element={
+                <ErrorBoundary section="NotFound">
+                  <PageTitle title="Not Found" />
+                  <NotFound />
+                </ErrorBoundary>
+              }
+            />
           </Routes>
         </React.Suspense>
       </main>
