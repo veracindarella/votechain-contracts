@@ -75,6 +75,69 @@ function computeResult(
   return { passed, total_votes, quorum_met, majority_met, margin };
 }
 
+type SimulateField =
+  | "tokenSupply"
+  | "quorum"
+  | "votesYes"
+  | "votesNo"
+  | "votesAbstain";
+
+type FieldErrors = Partial<Record<SimulateField, string>>;
+
+interface SimulationInputs {
+  tokenSupply: number;
+  quorum: number;
+  votesYes: number;
+  votesNo: number;
+  votesAbstain: number;
+}
+
+function validateInputs(inputs: SimulationInputs): FieldErrors {
+  const errors: FieldErrors = {};
+  const values: SimulateField[] = [
+    "tokenSupply",
+    "quorum",
+    "votesYes",
+    "votesNo",
+    "votesAbstain",
+  ];
+
+  for (const field of values) {
+    if (!Number.isFinite(inputs[field]) || inputs[field] < 0) {
+      errors[field] = "Enter a non-negative number.";
+    }
+  }
+
+  if (!errors.tokenSupply && inputs.tokenSupply <= 0) {
+    errors.tokenSupply = "Token supply must be greater than zero.";
+  }
+  if (!errors.quorum && inputs.quorum > inputs.tokenSupply) {
+    errors.quorum = "Quorum cannot exceed the token supply.";
+  }
+
+  const totalVotes = inputs.votesYes + inputs.votesNo + inputs.votesAbstain;
+  for (const field of ["votesYes", "votesNo", "votesAbstain"] as const) {
+    if (!errors[field] && totalVotes > inputs.tokenSupply) {
+      errors[field] = "Vote counts cannot exceed the token supply in total.";
+    }
+  }
+
+  return errors;
+}
+
+const BACKEND_FIELD_NAMES: Record<string, SimulateField> = {
+  token_supply: "tokenSupply",
+  quorum: "quorum",
+  votes_yes: "votesYes",
+  votes_no: "votesNo",
+  votes_abstain: "votesAbstain",
+};
+
+function backendErrorToField(message: string): SimulateField | undefined {
+  const match = message.match(/'([a-z_]+)'/);
+  return match ? BACKEND_FIELD_NAMES[match[1]] : undefined;
+}
+
 // ---------------------------------------------------------------------------
 // Sub-components
 // ---------------------------------------------------------------------------
@@ -87,6 +150,7 @@ interface SliderFieldProps {
   max: number;
   step?: number;
   onChange: (value: number) => void;
+  error?: string;
 }
 
 /**
@@ -100,6 +164,7 @@ function SliderField({
   max,
   step = 1,
   onChange,
+  error,
 }: SliderFieldProps) {
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const parsed = Number(e.target.value);
@@ -127,6 +192,8 @@ function SliderField({
           aria-valuemax={max}
           aria-valuenow={value}
           aria-label={label}
+          aria-invalid={Boolean(error)}
+          aria-describedby={error ? `${id}-error` : undefined}
         />
         <input
           id={`${id}-number`}
@@ -138,8 +205,15 @@ function SliderField({
           onChange={handleChange}
           style={{ width: "110px" }}
           aria-label={`${label} (numeric input)`}
+          aria-invalid={Boolean(error)}
+          aria-describedby={error ? `${id}-error` : undefined}
         />
       </div>
+      {error && (
+        <p id={`${id}-error`} role="alert" style={{ color: "#721c24", marginTop: "0.25rem" }}>
+          {error}
+        </p>
+      )}
     </div>
   );
 }
@@ -220,6 +294,7 @@ export default function Simulate() {
   const [apiResult, setApiResult] = useState<SimulateApiResponse | null>(null);
   const [apiError, setApiError] = useState<string | null>(null);
   const [apiLoading, setApiLoading] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
 
   // ---- Real-time local computation -----------------------------------------
   const localResult = computeResult(votesYes, votesNo, votesAbstain, quorum);
@@ -245,9 +320,19 @@ export default function Simulate() {
    * Stub: uses the VITE_API_URL env var (defaults to localhost:3001).
    */
   const handleCallApi = useCallback(async () => {
-    setApiLoading(true);
+    const errors = validateInputs({
+      tokenSupply,
+      quorum,
+      votesYes,
+      votesNo,
+      votesAbstain,
+    });
+    setFieldErrors(errors);
     setApiError(null);
     setApiResult(null);
+    if (Object.keys(errors).length > 0) return;
+
+    setApiLoading(true);
     try {
       const base = import.meta.env.VITE_API_URL ?? "http://localhost:3001";
       const response = await fetch(`${base}/simulate`, {
@@ -263,9 +348,18 @@ export default function Simulate() {
       });
       if (!response.ok) {
         const err = (await response.json()) as { error?: string };
-        throw new Error(err.error ?? `HTTP ${response.status}`);
+        const message =
+          typeof err.error === "string" ? err.error : `HTTP ${response.status}`;
+        const field = backendErrorToField(message);
+        if (field) {
+          setFieldErrors((prev) => ({ ...prev, [field]: message }));
+        } else {
+          setApiError(message);
+        }
+        return;
       }
       const data = (await response.json()) as SimulateApiResponse;
+      setFieldErrors({});
       setApiResult(data);
     } catch (err) {
       setApiError(err instanceof Error ? err.message : String(err));
@@ -295,6 +389,7 @@ export default function Simulate() {
           max={100_000_000}
           step={100_000}
           onChange={handleTokenSupplyChange}
+          error={fieldErrors.tokenSupply}
         />
 
         <SliderField
@@ -305,6 +400,7 @@ export default function Simulate() {
           max={tokenSupply}
           step={100_000}
           onChange={(v) => setQuorum(clampToSupply(v))}
+          error={fieldErrors.quorum}
         />
 
         <SliderField
@@ -315,6 +411,7 @@ export default function Simulate() {
           max={tokenSupply}
           step={100_000}
           onChange={(v) => setVotesYes(clampToSupply(v))}
+          error={fieldErrors.votesYes}
         />
 
         <SliderField
@@ -325,6 +422,7 @@ export default function Simulate() {
           max={tokenSupply}
           step={100_000}
           onChange={(v) => setVotesNo(clampToSupply(v))}
+          error={fieldErrors.votesNo}
         />
 
         <SliderField
@@ -335,6 +433,7 @@ export default function Simulate() {
           max={tokenSupply}
           step={100_000}
           onChange={(v) => setVotesAbstain(clampToSupply(v))}
+          error={fieldErrors.votesAbstain}
         />
       </section>
 
