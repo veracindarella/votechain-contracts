@@ -180,11 +180,12 @@ function VoteTallies({ yes, no, abstain }: VoteTalliesProps) {
 interface ProposalCardProps {
   proposal: RawProposal;
   voted: VoteChoice | undefined;
+  selectedChoice: VoteChoice | undefined;
   onVote: (choice: VoteChoice) => void;
   submitting: boolean;
 }
 
-function ProposalCard({ proposal, voted, onVote, submitting }: ProposalCardProps) {
+function ProposalCard({ proposal, voted, selectedChoice, onVote, submitting }: ProposalCardProps) {
   const secs = secondsUntil(proposal.end_time);
   const endingSoon = secs > 0 && secs < 3600;
 
@@ -263,6 +264,7 @@ function ProposalCard({ proposal, voted, onVote, submitting }: ProposalCardProps
               onClick={() => onVote(choice)}
               disabled={submitting}
               aria-label={`Vote ${choice} on proposal ${proposal.id}: ${sanitizeText(proposal.title)}`}
+              aria-pressed={selectedChoice === choice}
             >
               {choice}
             </button>
@@ -423,6 +425,7 @@ export default function VotingPanel() {
               <ProposalCard
                 proposal={p}
                 voted={voted[p.id]}
+                selectedChoice={pendingProposal?.id === p.id ? pendingChoice : undefined}
                 onVote={(choice) => openConfirmation(p, choice)}
                 submitting={submitting}
               />

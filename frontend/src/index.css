@@ -376,7 +376,8 @@ tr:nth-child(even) {
   transition: background 0.15s, border-color 0.15s, transform 0.1s;
 }
 
-.vp-vote-btn:focus-visible {
+.vp-vote-btn:focus-visible,
+.vote-btn:focus-visible {
   outline: 3px solid #7dd3fc;
   outline-offset: 2px;
 }
