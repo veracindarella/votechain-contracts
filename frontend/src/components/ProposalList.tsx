@@ -16,6 +16,7 @@ import { useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import type { Proposal, ProposalState } from '../types';
 import QuorumProgressBar from './QuorumProgressBar';
+import { ProposalListSkeleton } from './Skeleton';
 import { sanitizeText } from '../utils/sanitize';
 
 const sortOptions = [
@@ -35,6 +36,7 @@ function statusClass(state: ProposalState) {
 
 interface Props {
   proposals: Proposal[];
+  loading?: boolean;
 }
 
 type StateFilter = 'All' | ProposalState;
@@ -46,7 +48,7 @@ function normalizeTag(value: string): string | null {
   return /^[a-z0-9-]{1,32}$/.test(normalized) ? normalized : null;
 }
 
-export default function ProposalList({ proposals }: Props) {
+export default function ProposalList({ proposals, loading = false }: Props) {
   const [searchText, setSearchText] = useState('');
   const [stateFilter, setStateFilter] = useState<StateFilter>('All');
   const [sortKey, setSortKey] = useState<SortKey>('newest');
@@ -102,6 +104,8 @@ export default function ProposalList({ proposals }: Props) {
         return a.endAt.localeCompare(b.endAt);
       });
   }, [proposals, searchText, stateFilter, sortKey, searchParams]);
+
+  if (loading) return <ProposalListSkeleton />;
 
   return (
     <section aria-labelledby="proposal-list-heading" className="card">

@@ -213,7 +213,26 @@ export function GovernanceDashboard() {
     };
   }, []);
 
-  if (loading && !stats) return <p aria-live="polite">Loading governance statistics…</p>;
+  if (loading && !stats) {
+    return (
+      <main style={{ padding: 24, fontFamily: "sans-serif", color: "#e0e0e0", background: "#121212", minHeight: "100vh" }}>
+        <h1 style={{ marginBottom: 24 }}>Governance Dashboard</h1>
+        <div
+          aria-busy="true"
+          aria-label="Loading governance statistics"
+          aria-live="polite"
+          style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 16 }}
+        >
+          {Array.from({ length: 4 }).map((_, index) => (
+            <div key={index} style={cardStyle}>
+              <div className="skeleton-block" style={{ width: "45%", height: 12, marginBottom: 12 }} />
+              <div className="skeleton-block" style={{ width: "75%", height: 36 }} />
+            </div>
+          ))}
+        </div>
+      </main>
+    );
+  }
   if (!stats) return <p>Failed to load statistics.</p>;
 
   const totalProposals = Object.values(stats.byState).reduce((a, b) => a + b, 0);
