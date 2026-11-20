@@ -128,6 +128,7 @@ export function CreateProposalForm({ onSuccess, onCancel }: CreateProposalFormPr
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [touched, setTouched] = useState<Record<string, boolean>>({});
+  const [reviewing, setReviewing] = useState(false);
 
   // ── Field blur handler (inline validation) ────────────────────────────────
 
@@ -149,6 +150,12 @@ export function CreateProposalForm({ onSuccess, onCancel }: CreateProposalFormPr
     const fieldErrors = validateForm(title, description, quorum, duration, t);
     setErrors(fieldErrors);
     if (Object.keys(fieldErrors).length > 0) return;
+
+    setReviewing(true);
+  }
+
+  async function handleConfirm() {
+    setSubmitError(null);
 
     const payload: CreateProposalPayload = {
       title: title.trim(),
@@ -196,7 +203,61 @@ export function CreateProposalForm({ onSuccess, onCancel }: CreateProposalFormPr
   const errorId = (field: string) => `create-proposal-${field}-error`;
   const inputId  = (field: string) => `create-proposal-${field}`;
 
-  // ── Render ────────────────────────────────────────────────────────────────
+  if (reviewing) {
+    return (
+      <form
+        onSubmit={(e) => e.preventDefault()}
+        aria-label={t('createProposal.reviewFormLabel')}
+        style={styles.form}
+      >
+        <h2 style={styles.heading}>{t('createProposal.reviewHeading')}</h2>
+        {submitError && (
+          <div role="alert" style={styles.globalError}>
+            {submitError}
+          </div>
+        )}
+        <dl style={styles.reviewList}>
+          <div style={styles.reviewRow}>
+            <dt style={styles.reviewLabel}>{t('createProposal.titleLabel')}</dt>
+            <dd style={styles.reviewValue}>{title.trim()}</dd>
+          </div>
+          <div style={styles.reviewRow}>
+            <dt style={styles.reviewLabel}>{t('createProposal.descriptionLabel')}</dt>
+            <dd style={styles.reviewValue}>{description.trim()}</dd>
+          </div>
+          <div style={styles.reviewRow}>
+            <dt style={styles.reviewLabel}>{t('createProposal.quorumLabel')}</dt>
+            <dd style={styles.reviewValue}>{quorum}</dd>
+          </div>
+          <div style={styles.reviewRow}>
+            <dt style={styles.reviewLabel}>{t('createProposal.durationLabel')}</dt>
+            <dd style={styles.reviewValue}>{duration}</dd>
+          </div>
+        </dl>
+        <div style={styles.actions}>
+          <button
+            type="button"
+            onClick={() => setReviewing(false)}
+            disabled={submitting}
+            style={styles.cancelBtn}
+          >
+            {t('createProposal.reviewBackButton')}
+          </button>
+          <button
+            type="button"
+            onClick={handleConfirm}
+            disabled={submitting}
+            aria-busy={submitting}
+            style={styles.submitBtn}
+          >
+            {submitting
+              ? t('createProposal.submittingButton')
+              : t('createProposal.reviewConfirmButton')}
+          </button>
+        </div>
+      </form>
+    );
+  }
 
   return (
     <form
@@ -520,5 +581,26 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 14,
     fontWeight: 600,
     padding: '8px 24px',
+  },
+  reviewList: {
+    margin: 0,
+    marginBottom: 24,
+  },
+  reviewRow: {
+    padding: '10px 0',
+    borderBottom: '1px solid #333',
+  },
+  reviewLabel: {
+    fontSize: 12,
+    fontWeight: 600,
+    color: '#888',
+    marginBottom: 4,
+  },
+  reviewValue: {
+    margin: 0,
+    fontSize: 14,
+    color: '#e0e0e0',
+    whiteSpace: 'pre-wrap',
+    overflowWrap: 'anywhere',
   },
 };
