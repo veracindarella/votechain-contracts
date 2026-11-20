@@ -171,3 +171,36 @@ jobs:
               issue_number: context.issue.number,
               body,
             });
+
+  widget-size:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend/widget
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@cdca7365b2dadb8aad0a33bc7601856ffabcc48e # v4.3.0
+        with:
+          node-version: '20'
+
+      - name: Install widget dependencies
+        run: npm install
+
+      - name: Build widget
+        run: npm run build
+
+      - name: Enforce widget size budget
+        env:
+          WIDGET_SIZE_LIMIT_KB: ${{ vars.WIDGET_SIZE_LIMIT_KB || '30' }}
+        run: npm run size
+
+      - name: Upload widget size report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: widget-size-report
+          path: frontend/widget/dist/widget-size-report.json
+          if-no-files-found: ignore
