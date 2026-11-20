@@ -111,17 +111,22 @@ async function checkStellarRpc(): Promise<void> {
   }
 }
 
-async function getComponentStatuses() {
+async function getComponentStatuses(includeStellarRpc = true) {
   const [db, redis, stellar_rpc] = await Promise.all([
     checkComponent("db", checkDatabase),
     checkComponent("redis", checkRedis),
-    checkComponent("stellar_rpc", checkStellarRpc),
+    includeStellarRpc
+      ? checkComponent("stellar_rpc", checkStellarRpc)
+      : Promise.resolve<ComponentStatus>("healthy"),
   ]);
-  return { db, redis, stellar_rpc };
+  return includeStellarRpc ? { db, redis, stellar_rpc } : { db, redis };
 }
 
-async function sendReadiness(res: Response): Promise<void> {
-  const components = await getComponentStatuses();
+async function sendReadiness(
+  res: Response,
+  includeStellarRpc = true,
+): Promise<void> {
+  const components = await getComponentStatuses(includeStellarRpc);
   const healthy = Object.values(components).every(
     (status) => status === "healthy",
   );
@@ -148,6 +153,18 @@ router.get("/live", (_req: Request, res: Response) => {
     uptime: process.uptime(),
     version: version ?? "1.0.0",
   });
+});
+
+router.get("/healthz", (_req: Request, res: Response) => {
+  res.status(200).json({
+    status: "ok",
+    uptime: process.uptime(),
+    version: version ?? "1.0.0",
+  });
+});
+
+router.get("/readyz", (_req: Request, res: Response) => {
+  void sendReadiness(res, false);
 });
 
 export default router;
