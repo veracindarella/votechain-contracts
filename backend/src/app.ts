@@ -22,6 +22,7 @@ import { apiKeyAuth } from "./middleware/apiKeyAuth";
 import { rateLimit } from "./middleware/rateLimit";
 import { jsonBodyParser } from "./middleware/jsonBodyParser";
 import { metricsMiddleware, metricsHandler } from "./middleware/metrics";
+import { securityHeaders } from "./middleware/securityHeaders";
 import healthRoutes from "./routes/health";
 import proposalRoutes from "./routes/proposals";
 import leaderboardRoutes from "./routes/leaderboard";
@@ -118,6 +119,11 @@ app.use(
     referrerPolicy: { policy: "strict-origin-when-cross-origin" },
   })
 );
+
+// Cross-origin isolation (COOP/COEP) and Permissions-Policy — additive
+// hardening on top of the baseline helmet headers above. See
+// middleware/securityHeaders.ts for the widget-embed exception note.
+app.use(securityHeaders);
 
 // Handle preflight OPTIONS for all routes
 app.options("*", cors(corsOptions));

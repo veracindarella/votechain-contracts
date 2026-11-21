@@ -115,6 +115,23 @@ trailing slash. The default backend configuration allows only
 widget sends a read-only request without credentials or an API key. Serve both
 the page and API over HTTPS in production to avoid mixed-content blocking.
 
+## Cross-origin isolation headers
+
+The API also sends `Cross-Origin-Opener-Policy: same-origin`,
+`Cross-Origin-Embedder-Policy: require-corp`, and a restrictive
+`Permissions-Policy` (see `backend/src/middleware/securityHeaders.ts`). These do
+not affect the widget: it is a Web Component, not an `<iframe>`, and it only
+performs a CORS-mode `fetch`. COOP/COEP are enforced on the embedding
+*document* rather than on a JSON response consumed by `fetch`, and
+`Cross-Origin-Resource-Policy` is only evaluated for `no-cors` requests.
+Host pages therefore do not need to change anything, and a host page that
+itself sets `Cross-Origin-Embedder-Policy: require-corp` still loads the widget
+because the CORS response satisfies its embedder policy check.
+
+The one unsupported case is embedding or navigating to an API URL as a
+document (for example `<iframe src="{api-url}/...">`): `require-corp` applies
+there, but the API only returns JSON, so no document is meant to be embedded.
+
 ## Browser compatibility
 
 The widget relies on Custom Elements v1, Shadow DOM v1, `fetch`,
