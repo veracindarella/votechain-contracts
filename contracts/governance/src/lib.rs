@@ -18,6 +18,11 @@ mod events;
 pub(crate) mod storage;
 mod types;
 
+// Kani formal-verification harnesses for the proposal lifecycle state machine.
+// Compiled only under `cargo kani`, which sets `--cfg kani`.
+#[cfg(kani)]
+mod lifecycle_model;
+
 #[cfg(test)]
 mod prop_tests;
 #[cfg(test)]

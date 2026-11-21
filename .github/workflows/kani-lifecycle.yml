@@ -1,0 +1,105 @@
+name: Kani Formal Verification
+
+# ── Trigger ──────────────────────────────────────────────────────────────────
+# Formal verification of the proposal lifecycle state machine
+# (`contracts/governance/src/lifecycle_model.rs`).
+#
+# Kani model-checks the state-transition guards over *all* symbolic inputs, so it
+# is slower than the unit-test suite: it runs nightly, and on pull requests that
+# touch the model, the contract, or this workflow.
+on:
+  schedule:
+    - cron: '0 3 * * *'   # 03:00 UTC daily (after the nightly fuzz run at 02:00)
+  push:
+    paths:
+      - 'contracts/governance/src/lifecycle_model.rs'
+      - 'contracts/governance/src/lib.rs'
+      - 'contracts/governance/src/types.rs'
+      - '.github/workflows/kani-lifecycle.yml'
+  pull_request:
+    paths:
+      - 'contracts/governance/src/lifecycle_model.rs'
+      - 'contracts/governance/src/lib.rs'
+      - 'contracts/governance/src/types.rs'
+      - '.github/workflows/kani-lifecycle.yml'
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  # Per-harness wall-clock budget (seconds). Harnesses here are small and
+  # loop-free except for the transition-table scan, so 10 minutes is generous.
+  HARNESS_TIMEOUT_SECONDS: '600'
+
+jobs:
+  lifecycle-state-machine:
+    name: Proposal lifecycle state machine
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-kani-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-kani-
+            ${{ runner.os }}-cargo-
+
+      - name: Install Kani
+        run: |
+          cargo install --locked kani-verifier
+          cargo kani setup
+
+      - name: Model-check the proposal lifecycle state machine
+        run: |
+          set -euo pipefail
+          harnesses=(
+            verify_table_matches_transition_function
+            verify_no_illegal_transition_is_accepted
+            verify_every_non_legal_event_is_rejected
+            verify_terminal_states_are_absorbing
+            verify_finalise_and_cancel_require_active
+            verify_execute_requires_passed
+            verify_active_cannot_reach_executed_directly
+            verify_create_requires_absent_state
+            verify_legal_transition_table_has_no_conflicts
+            verify_all_model_states_are_reachable
+            verify_model_matches_contract_states
+          )
+          for harness in "${harnesses[@]}"; do
+            echo "::group::kani --harness ${harness}"
+            timeout "${HARNESS_TIMEOUT_SECONDS}" \
+              cargo kani -p votechain-governance --harness "${harness}"
+            echo "::endgroup::"
+          done
+
+      - name: Publish verification summary
+        if: always()
+        run: |
+          {
+            echo "## 🧾 Kani: proposal lifecycle state machine"
+            echo ""
+            echo "Harnesses (all must pass):"
+            echo ""
+            echo '```'
+            echo "verify_table_matches_transition_function"
+            echo "verify_no_illegal_transition_is_accepted"
+            echo "verify_every_non_legal_event_is_rejected"
+            echo "verify_terminal_states_are_absorbing"
+            echo "verify_finalise_and_cancel_require_active"
+            echo "verify_execute_requires_passed"
+            echo "verify_active_cannot_reach_executed_directly"
+            echo "verify_create_requires_absent_state"
+            echo "verify_legal_transition_table_has_no_conflicts"
+            echo "verify_all_model_states_are_reachable"
+            echo "verify_model_matches_contract_states"
+            echo '```'
+            echo ""
+            echo "Result: \`${{ job.status }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"

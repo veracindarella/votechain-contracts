@@ -15,6 +15,7 @@
 #![no_std]
 
 mod events;
+mod reward;
 mod staking;
 mod storage;
 mod types;
