@@ -1,0 +1,22 @@
+# WASM Size History
+
+This document tracks the compiled WASM size of each contract release build.
+Sizes are recorded whenever they change. CI enforces the per-contract budget
+below and fails the release build if any contract exceeds its budget.
+
+## Size Budgets
+
+| Contract | Budget (bytes) |
+| --- | --- |
+| governance | 262144 |
+| token | 196608 |
+
+Budgets are enforced by the CI size guard. Update the budget only with a
+justified reason; the guard exists to prevent accidental bloat.
+
+## History
+
+| Date | Contract | Size (bytes) | Budget (bytes) | Status |
+| --- | --- | --- | --- | --- |
+| 2024-01-01 | governance | 0 | 262144 | baseline |
+| 2024-01-01 | token | 0 | 196608 | baseline |

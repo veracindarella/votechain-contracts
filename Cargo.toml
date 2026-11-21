@@ -10,6 +10,13 @@ members = [
 [workspace.dependencies]
 soroban-sdk = { version = "22.0.0" }
 
+[workspace.metadata.wasm-size-budget]
+# Per-contract WASM size budgets (bytes) for the release build.
+# CI fails if a release build exceeds its contract's budget.
+# Update docs/wasm-size-history when these change.
+governance = 65536
+token = 65536
+
 [profile.release]
 opt-level = "z"
 overflow-checks = true
@@ -23,3 +30,11 @@ lto = true
 [profile.release-with-logs]
 inherits = "release"
 debug-assertions = true
+
+[profile.kani]
+inherits = "dev"
+# Kani proofs (see contracts/governance/src/kani_proofs.rs) run under this
+# profile. Keep debug assertions on so overflow checks stay active and the
+# bounded harnesses finish well within CI timeouts.
+debug-assertions = true
+overflow-checks = true
