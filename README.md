@@ -1700,3 +1700,8 @@ git push origin feature/your-task-name
 • Open a Pull Request.
 
 Built with ❤️ on Stellar
+
+## Handsoff notes
+
+<!-- handsoff-issue-564 -->
+- #564: [Contracts] Add a token burn-to-zero and burn-more-than-balance test
