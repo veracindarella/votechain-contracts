@@ -39,3 +39,30 @@ jobs:
           echo "**Status:** Scan completed" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "For more details on vulnerabilities or exceptions, see: [Security Documentation](../docs/CARGO_AUDIT_EXCEPTIONS.md)" >> $GITHUB_STEP_SUMMARY
+
+  deny:
+    name: Cargo Deny (bans & advisories)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ~/.cargo/registry
+          key: ${{ runner.os }}-deny-${{ hashFiles('**/Cargo.lock') }}
+      - name: Install cargo-deny
+        run: cargo install --locked cargo-deny
+      - name: Run cargo deny check (bans & advisories)
+        run: |
+          echo "Running cargo-deny to detect duplicate crate versions and advisories..."
+          # cargo-deny exits non-zero when a banned/duplicate crate version
+          # or a security advisory is detected, failing the CI job.
+          cargo deny check bans advisories
+      - name: Generate deny report
+        if: always()
+        run: |
+          echo "## Cargo Deny Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Status:** Scan completed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Checks duplicate crate versions (bans) and security advisories." >> $GITHUB_STEP_SUMMARY

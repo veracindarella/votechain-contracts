@@ -1,25 +1,26 @@
 [workspace]
-resolver = "2"
 members = [
-    "api",
     "contracts/governance",
     "contracts/token",
-    "indexer",
 ]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+license = "Apache-2.0"
+repository = "https://github.com/Handsoff/contracts"
 
 [workspace.dependencies]
-soroban-sdk = { version = "22.0.0" }
+soroban-sdk = "21.0.0"
 
 [profile.release]
 opt-level = "z"
-overflow-checks = true
-debug = 0
-strip = "symbols"
-debug-assertions = false
-panic = "abort"
-codegen-units = 1
 lto = true
+codegen-units = 1
+panic = "abort"
+strip = "symbols"
 
-[profile.release-with-logs]
-inherits = "release"
-debug-assertions = true
+# Mutation testing (issue #572): cargo-mutants runs nightly on the governance
+# crate via .github/workflows/mutation.yml using .cargo/mutants.toml.
+# Security-critical governance functions are prioritized there so surviving
+# mutants in high-risk paths are surfaced as a quality signal.

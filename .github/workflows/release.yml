@@ -31,6 +31,13 @@ jobs:
       - name: Build WASM artifacts
         run: stellar contract build
 
+      - name: Generate gas report
+        run: |
+          set -euo pipefail
+          mkdir -p gas-report
+          # Reproducible per-function gas report for key Soroban entrypoints.
+          # Uses the checked-in script so numbers are deterministic and auditable.
+          bash scripts/gas-report.sh gas-report/gas-report.md
 
       - name: Generate SBOM (CycloneDX)
         uses: anchore/sbom-action@v0
@@ -45,7 +52,10 @@ jobs:
       - name: Create GitHub release
         uses: softprops/action-gh-release@da05d552573ad5aba039eaac05058a918a7bf631 # v2.2.2
         with:
-          files: target/wasm32-unknown-unknown/release/*.wasm
+          files: |
+            target/wasm32-unknown-unknown/release/*.wasm
+            gas-report/gas-report.md
+          body_path: gas-report/gas-report.md
           generate_release_notes: true
 
   publish-sdk:
@@ -78,7 +88,7 @@ jobs:
       - name: Verify tag matches package.json version
         run: |
           TAG_VERSION="${GITHUB_REF_NAME#v}"
-          PKG_VERSION="$(node -p "require('./package.json').version")"
+          PKG_VERSION="$(node -p "require('./package.json').version')"
           if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
             echo "Tag $GITHUB_REF_NAME does not match sdk/package.json version $PKG_VERSION" >&2
             exit 1

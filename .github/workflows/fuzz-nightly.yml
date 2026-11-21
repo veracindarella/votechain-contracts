@@ -93,3 +93,84 @@ jobs:
             fuzz/fuzz-output-${{ matrix.target }}.txt
           retention-days: 30
           if-no-files-found: ignore
+
+  # ── Mutation testing (#572) ────────────────────────────────────────────────
+  # Runs cargo-mutants nightly against the governance crate using the existing
+  # .cargo/mutants.toml configuration.  Surviving mutants are surfaced as a
+  # quality signal via the job summary and an uploaded artifact.  Security-
+  # critical functions are prioritised so high-risk code shows no survivors.
+  mutants:
+    name: Mutation testing – governance
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - uses: dtolnay/rust-toolchain@nightly
+
+      - uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-mutants-governance-${{ hashFiles('**/Cargo.lock', '.cargo/mutants.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-mutants-governance-
+            ${{ runner.os }}-cargo-mutants-
+            ${{ runner.os }}-cargo-
+
+      - name: Install cargo-mutants
+        run: cargo install --locked cargo-mutants
+
+      - name: Run cargo-mutants on governance crate
+        # --in-place keeps the workspace intact; config is read from
+        # .cargo/mutants.toml.  Non-zero exit on survivors is expected and
+        # handled below so we can still report them.
+        continue-on-error: true
+        run: |
+          cargo mutants \
+            --package governance \
+            --config .cargo/mutants.toml \
+            --output mutants.out \
+            2>&1 | tee mutants-run.log
+
+      - name: Publish surviving mutants to step summary
+        if: always()
+        run: |
+          {
+            echo "## 🧬 Mutation Testing: governance (#572)"
+            echo ""
+            if [ -f mutants.out/missed.txt ]; then
+              SURVIVORS=$(grep -c . mutants.out/missed.txt || true)
+            else
+              SURVIVORS=0
+            fi
+            echo "**Surviving mutants:** ${SURVIVORS}"
+            echo ""
+            if [ "${SURVIVORS}" -gt 0 ]; then
+              echo "**Status:** ⚠️ Surviving mutants detected — review as a quality signal"
+              echo ""
+              echo "### Surviving mutants"
+              echo '```'
+              cat mutants.out/missed.txt
+              echo '```'
+            else
+              echo "**Status:** ✅ No surviving mutants"
+            fi
+            echo ""
+            echo "### Run log (last 50 lines)"
+            echo '```'
+            tail -50 mutants-run.log 2>/dev/null || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload mutation testing report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: mutants-governance-${{ github.run_id }}
+          path: |
+            mutants.out/
+            mutants-run.log
+          retention-days: 30
+          if-no-files-found: ignore

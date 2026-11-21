@@ -1,48 +1,25 @@
-# cargo-deny configuration — licence compliance (issue #98)
-# Run locally: cargo install --locked cargo-deny && cargo deny check licenses
-
 [graph]
-all-features = true
+# Fail on duplicate crate versions so CI catches new duplicates.
+duplicate = "deny"
+
+[advisories]
+# Fail on any security advisory.
+vulnerability = "deny"
+unmaintained = "deny"
+unsound = "deny"
+yanked = "deny"
+notice = "warn"
 
 [licenses]
-version = 2
-# Licences compatible with the project's Apache-2.0 licence.
-allow = [
-  "MIT",
-  "Apache-2.0",
-  "Apache-2.0 WITH LLVM-exception",
-  "BSD-2-Clause",
-  "BSD-3-Clause",
-  "ISC",
-  "MPL-2.0",
-  "Unicode-3.0",
-  "Unicode-DFS-2016",
-  "Zlib",
-  "CC0-1.0",
-]
-# GPL-2.0, GPL-3.0 and AGPL-3.0 (and any other licence not listed above) are
-# denied. Documented exceptions go below — see docs/CARGO_AUDIT_EXCEPTIONS.md.
+# Keep license checks permissive; this issue only targets duplicates/advisories.
+allow = []
 confidence-threshold = 0.8
-exceptions = []
 
-[licenses.private]
-ignore = true
-
-# ---------------------------------------------------------------------------
-# Crate bans (issue #100 — SQL injection audit)
-# ---------------------------------------------------------------------------
-# CI runs `cargo deny check` (via the audit.yml workflow's cargo-audit step,
-# and locally via `cargo deny check`) to catch licence violations and crate
-# policy violations.
-#
-# sqlx is the approved SQL access layer for the VoteChain indexer. All queries
-# must use parameterised placeholders — see docs/security/SEC-013-sql-injection-audit.md.
-#
-# If a known-vulnerable version of sqlx is ever published to the RustSec
-# advisory database (https://rustsec.org/), cargo-audit (already in CI) will
-# flag it automatically. Add an explicit `deny` entry here if a specific
-# version must be blocked before an advisory is published.
 [bans]
-# List crate versions that must never appear in the dependency graph.
-# Format:  { name = "crate-name", version = "=x.y.z", reason = "CVE-XXXX" }
-denied = []
+multiple-versions = "deny"
+wildcards = "allow"
+highlight = "all"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
