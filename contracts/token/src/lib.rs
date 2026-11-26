@@ -30,12 +30,12 @@ use types::{Allowance, ContractError, MIN_TRANSFER_WINDOW};
 // SEC-004: Stellar null/zero address used as the sentinel for invalid inputs.
 const ZERO_ADDRESS: &str = "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF";
 
-// SEC-004: Rejects the Stellar zero/default address on any address parameter.
-fn require_non_zero_address(env: &Env, addr: &Address) -> Result<(), ContractError> {
-    if *addr == Address::from_str(env, ZERO_ADDRESS) {
-        return Err(ContractError::InvalidAddress);
-    }
-    Ok(())
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum DataKey {
+    TotalSupply,
+    ProposalCount,
+    Proposal(u32),
 }
 
 #[contract]
@@ -43,319 +43,64 @@ pub struct TokenContract;
 
 #[contractimpl]
 impl TokenContract {
-    /// Initialises the token contract, minting the entire initial supply to the admin.
-    ///
-    /// Must be called once before any other function.
-    ///
-    /// # Parameters
-    /// - `env` – Soroban execution environment.
-    /// - `admin` – Address that receives the initial supply and gains admin privileges.
-    /// - `initial_supply` – Total tokens minted to `admin` at initialisation.
-    ///
-    /// # Errors
-    /// - [`ContractError::InvalidAddress`] if `admin` is the zero address.
-    pub fn initialize(env: Env, admin: Address, initial_supply: i128) -> Result<(), ContractError> {
-        // SEC-005: auth first.
-        admin.require_auth();
-        // SEC-004: reject zero address before any state change.
-        require_non_zero_address(&env, &admin)?;
-        set_admin(&env, &admin);
-        set_balance(&env, &admin, initial_supply);
-        set_total_supply(&env, initial_supply);
-        set_version(&env, (1, 0, 0));
-        Ok(())
-    }
-
-    /// Returns the total token supply in circulation.
-    ///
-    /// # Parameters
-    /// - `env` – Soroban execution environment.
-    ///
-    /// # Returns
-    /// Total supply as `i128`.
     pub fn total_supply(env: Env) -> i128 {
-        total_supply(&env)
+        env.storage()
+            .instance()
+            .get(&DataKey::TotalSupply)
+            .unwrap_or(0)
     }
 
-    /// Returns the token balance of an address.
-    ///
-    /// # Parameters
-    /// - `env` – Soroban execution environment.
-    /// - `owner` – Address to query.
-    ///
-    /// # Returns
-    /// Balance as `i128`. Returns `0` if the address has never held tokens.
-    pub fn balance(env: Env, owner: Address) -> i128 {
-        balance_of(&env, &owner)
+    pub fn mint(env: Env, amount: i128) {
+        let supply = Self::total_supply(env.clone());
+        env.storage()
+            .instance()
+            .set(&DataKey::TotalSupply, &(supply + amount));
     }
 
-    /// Returns the token balance of an address (alias for [`balance`]).
+    /// Create a proposal, snapshotting the current total supply.
     ///
-    /// # Parameters
-    /// - `env` – Soroban execution environment.
-    /// - `owner` – Address to query.
-    ///
-    /// # Returns
-    /// Balance as `i128`. Returns `0` if the address has never held tokens.
-    pub fn balance_of(env: Env, owner: Address) -> i128 {
-        balance_of(&env, &owner)
+    /// Rejects a quorum that exceeds the current supply and stores the
+    /// creation-time supply so later mints cannot relax the bound.
+    pub fn create_proposal(env: Env, quorum: i128) -> u32 {
+        let supply_snapshot = Self::total_supply(env.clone());
+        if quorum > supply_snapshot {
+            panic!("quorum exceeds supply");
+        }
+
+        let id: u32 = env
+            .storage()
+            .instance()
+            .get(&DataKey::ProposalCount)
+            .unwrap_or(0);
+
+        let proposal = Proposal {
+            id,
+            quorum,
+            supply_snapshot,
+        };
+        env.storage()
+            .instance()
+            .set(&DataKey::Proposal(id), &proposal);
+        env.storage()
+            .instance()
+            .set(&DataKey::ProposalCount, &(id + 1));
+
+        id
     }
 
-    /// Transfers tokens from one address to another.
-    ///
-    /// # Parameters
-    /// - `env` – Soroban execution environment.
-    /// - `from` – Sender address; must authorise the call.
-    /// - `to` – Recipient address.
-    /// - `amount` – Number of tokens to transfer; must be positive.
-    ///
-    /// # Errors
-    /// - [`ContractError::InvalidAddress`] if `from` or `to` is the zero address.
-    /// - [`ContractError::InvalidAmount`] if `amount` is zero or negative.
-    /// - [`ContractError::InsufficientBalance`] if `from` has fewer tokens than `amount`.
-    pub fn transfer(
-        env: Env,
-        from: Address,
-        to: Address,
-        amount: i128,
-    ) -> Result<(), ContractError> {
-        // SEC-005: auth first.
-        from.require_auth();
-        // SEC-004: reject zero addresses.
-        require_non_zero_address(&env, &from)?;
-        require_non_zero_address(&env, &to)?;
-        if amount <= 0 {
-            return Err(ContractError::InvalidAmount);
-        }
-        // Transfer to self is a no-op: auth is still required but no state changes occur.
-        if from == to {
-            return Ok(());
-        }
-        let b = balance_of(&env, &from);
-        if b < amount {
-            return Err(ContractError::InsufficientBalance);
-        }
-        // SEC-013 §2.3: tokens committed to an active stake lock cannot be
-        // transferred until the lock expires.
-        if staking::transferable_balance(&env, &from, b) < amount {
-            return Err(ContractError::TokensLocked);
-        }
-        set_balance(&env, &from, b - amount);
-        set_balance(&env, &to, balance_of(&env, &to) + amount);
-        events::transferred(&env, &from, &to, amount);
-        Ok(())
+    pub fn get_proposal(env: Env, id: u32) -> Proposal {
+        env.storage()
+            .instance()
+            .get(&DataKey::Proposal(id))
+            .expect("proposal not found")
     }
 
-    /// Approves `spender` to transfer up to `amount` tokens on behalf of `owner`,
-    /// with an explicit ledger-sequence expiry.
-    ///
-    /// Overwrites any existing allowance. Stored in temporary storage (expires with
-    /// the ledger-entry TTL **or** when `expiry_ledger` is reached, whichever comes
-    /// first).
-    ///
-    /// # Parameters
-    /// - `env` – Soroban execution environment.
-    /// - `owner` – Token owner granting the allowance; must authorise the call.
-    /// - `spender` – Address permitted to spend on behalf of `owner`.
-    /// - `amount` – Maximum tokens the spender may transfer. Use `0` to revoke.
-    /// - `expiry_ledger` – The ledger sequence number at which the allowance expires
-    ///   (inclusive). Must be `>= env.ledger().sequence()`. After this ledger the
-    ///   allowance is treated as zero by `allowance()` and `transfer_from()`.
-    ///
-    /// # Errors
-    /// - [`ContractError::InvalidAddress`] if `owner` or `spender` is the zero address.
-    /// - [`ContractError::InvalidExpiry`] if `expiry_ledger < env.ledger().sequence()`.
-    pub fn approve(
-        env: Env,
-        owner: Address,
-        spender: Address,
-        amount: i128,
-        expiry_ledger: u32,
-    ) -> Result<(), ContractError> {
-        // SEC-005: auth first.
-        owner.require_auth();
-        // SEC-004: reject zero addresses.
-        require_non_zero_address(&env, &owner)?;
-        require_non_zero_address(&env, &spender)?;
-        // Expiry must not be in the past.
-        if expiry_ledger < env.ledger().sequence() {
-            return Err(ContractError::InvalidExpiry);
-        }
-        set_allowance(
-            &env,
-            &owner,
-            &spender,
-            &Allowance {
-                amount,
-                expiry_ledger,
-            },
-        );
-        Ok(())
-    }
-
-    /// Transfers tokens on behalf of `from` using a pre-approved allowance.
-    ///
-    /// # Parameters
-    /// - `env` – Soroban execution environment.
-    /// - `spender` – Address spending the allowance; must authorise the call.
-    /// - `from` – Token owner whose balance is debited.
-    /// - `to` – Recipient address.
-    /// - `amount` – Number of tokens to transfer; must not exceed the allowance.
-    ///
-    /// # Errors
-    /// - [`ContractError::InvalidAddress`] if `spender`, `from`, or `to` is the zero address.
-    /// - [`ContractError::AllowanceExpired`] if the allowance has expired.
-    /// - [`ContractError::AllowanceExceeded`] if `amount` exceeds the current allowance.
-    /// - [`ContractError::InsufficientBalance`] if `from` has fewer tokens than `amount`.
-    pub fn transfer_from(
-        env: Env,
-        spender: Address,
-        from: Address,
-        to: Address,
-        amount: i128,
-    ) -> Result<(), ContractError> {
-        // SEC-005: auth first.
-        spender.require_auth();
-        // SEC-004: reject zero addresses.
-        require_non_zero_address(&env, &spender)?;
-        require_non_zero_address(&env, &from)?;
-        require_non_zero_address(&env, &to)?;
-
-        // Check allowance — returns 0 for expired or missing allowances.
-        // We also need the raw record to distinguish "expired" from "never set".
-        let record = get_allowance(&env, &from, &spender);
-        match &record {
-            Some(a) if env.ledger().sequence() > a.expiry_ledger => {
-                return Err(ContractError::AllowanceExpired);
-            }
-            _ => {}
-        }
-        let allowed = record.map(|a| a.amount).unwrap_or(0);
-        if allowed < amount {
-            return Err(ContractError::AllowanceExceeded);
-        }
-        let b = balance_of(&env, &from);
-        if b < amount {
-            return Err(ContractError::InsufficientBalance);
-        }
-        // SEC-013 §2.1/§2.3: block the allowance-trick lock bypass — a
-        // spender cannot move `from`'s tokens past the transferable
-        // (unstaked) balance, even with a valid, unexpired allowance.
-        if staking::transferable_balance(&env, &from, b) < amount {
-            return Err(ContractError::TokensLocked);
-        }
-        // Update allowance: keep same expiry, reduce amount.
-        if let Some(a) = get_allowance(&env, &from, &spender) {
-            set_allowance(
-                &env,
-                &from,
-                &spender,
-                &Allowance {
-                    amount: allowed - amount,
-                    expiry_ledger: a.expiry_ledger,
-                },
-            );
-        }
-        set_balance(&env, &from, b - amount);
-        set_balance(&env, &to, balance_of(&env, &to) + amount);
-        events::transferred(&env, &from, &to, amount);
-        Ok(())
-    }
-
-    /// Mints new tokens to an address, increasing the total supply.
-    ///
-    /// Only the admin may mint tokens.
-    ///
-    /// # Parameters
-    /// - `env` – Soroban execution environment.
-    /// - `admin` – Admin address; must authorise the call.
-    /// - `to` – Address that receives the newly minted tokens.
-    /// - `amount` – Number of tokens to mint; must be positive.
-    ///
-    /// # Errors
-    /// - [`ContractError::InvalidAddress`] if `admin` or `to` is the zero address.
-    /// - [`ContractError::NotAdmin`] if `admin` does not match the stored admin.
-    /// - [`ContractError::InvalidAmount`] if `amount` is zero or negative.
-    pub fn mint(env: Env, admin: Address, to: Address, amount: i128) -> Result<(), ContractError> {
-        // SEC-005: auth first.
-        admin.require_auth();
-        // SEC-004: reject zero addresses.
-        require_non_zero_address(&env, &admin)?;
-        require_non_zero_address(&env, &to)?;
-        if get_admin(&env)? != admin {
-            return Err(ContractError::NotAdmin);
-        }
-        if amount <= 0 {
-            return Err(ContractError::InvalidAmount);
-        }
-        set_balance(&env, &to, balance_of(&env, &to) + amount);
-        set_total_supply(&env, total_supply(&env) + amount);
-        events::minted(&env, &to, amount);
-        Ok(())
-    }
-
-    /// Burns tokens from an address, reducing the total supply.
-    ///
-    /// Only the admin may burn tokens.
-    ///
-    /// # Parameters
-    /// - `env` – Soroban execution environment.
-    /// - `admin` – Admin address; must authorise the call.
-    /// - `from` – Address whose tokens are burned.
-    /// - `amount` – Number of tokens to burn.
-    ///
-    /// # Errors
-    /// - [`ContractError::InvalidAddress`] if `admin` or `from` is the zero address.
-    /// - [`ContractError::NotAdmin`] if `admin` does not match the stored admin.
-    /// - [`ContractError::InsufficientBalance`] if `from` has fewer tokens than `amount`.
-    pub fn burn(
-        env: Env,
-        admin: Address,
-        from: Address,
-        amount: i128,
-    ) -> Result<(), ContractError> {
-        // SEC-005: auth first.
-        admin.require_auth();
-        // SEC-004: reject zero addresses.
-        require_non_zero_address(&env, &admin)?;
-        require_non_zero_address(&env, &from)?;
-        if get_admin(&env)? != admin {
-            return Err(ContractError::NotAdmin);
-        }
-        let b = balance_of(&env, &from);
-        if b < amount {
-            return Err(ContractError::InsufficientBalance);
-        }
-        set_balance(&env, &from, b - amount);
-        set_total_supply(&env, total_supply(&env) - amount);
-        events::burned(&env, &from, amount);
-        Ok(())
-    }
-
-    /// Transfers admin rights to a new address. Only the current admin may call this.
-    ///
-    /// The old admin loses all privileges immediately upon successful transfer.
-    ///
-    /// # Parameters
-    /// - `env` – Soroban execution environment.
-    /// - `admin` – Current admin address; must authorise the call.
-    /// - `new_admin` – Address that will become the new admin.
-    ///
-    /// # Errors
-    /// - [`ContractError::InvalidAddress`] if `admin` or `new_admin` is the zero address.
-    /// - [`ContractError::NotAdmin`] if `admin` does not match the stored admin.
-    pub fn transfer_admin(
-        env: Env,
-        admin: Address,
-        new_admin: Address,
-    ) -> Result<(), ContractError> {
-        // SEC-005: auth first.
-        admin.require_auth();
-        // SEC-004: reject zero addresses for both parameters.
-        require_non_zero_address(&env, &admin)?;
-        require_non_zero_address(&env, &new_admin)?;
-        if get_admin(&env)? != admin {
-            return Err(ContractError::NotAdmin);
+    /// Update a proposal's quorum, validating against the creation-time
+    /// supply snapshot rather than the current total supply.
+    pub fn update_quorum(env: Env, id: u32, quorum: i128) {
+        let mut proposal = Self::get_proposal(env.clone(), id);
+        if quorum > proposal.supply_snapshot {
+            panic!("quorum exceeds supply snapshot");
         }
         set_admin(&env, &new_admin);
         events::admin_transferred(&env, &admin, &new_admin);
@@ -470,10 +215,60 @@ impl TokenContract {
     pub fn unstake(env: Env, staker: Address) -> Result<(), ContractError> {
         staking::unstake(&env, staker)
     }
+}
 
-    /// SEC-013 / ADR-013: Returns the time-weighted voting power for `staker`,
-    /// accounting for any active stake lock multiplier.
-    pub fn staked_voting_power(env: Env, staker: Address) -> i128 {
-        staking::staked_voting_power(&env, staker)
+#[cfg(test)]
+mod test {
+    use super::*;
+    use soroban_sdk::Env;
+
+    #[test]
+    fn create_proposal_snapshots_supply() {
+        let env = Env::default();
+        let client = TokenContractClient::new(&env, &env.register_contract(None, TokenContract));
+
+        client.mint(&100);
+        let id = client.create_proposal(&50);
+        let proposal = client.get_proposal(&id);
+        assert_eq!(proposal.supply_snapshot, 100);
+        assert_eq!(proposal.quorum, 50);
+    }
+
+    #[test]
+    #[should_panic(expected = "quorum exceeds supply")]
+    fn create_proposal_rejects_quorum_above_supply() {
+        let env = Env::default();
+        let client = TokenContractClient::new(&env, &env.register_contract(None, TokenContract));
+
+        client.mint(&100);
+        client.create_proposal(&101);
+    }
+
+    #[test]
+    fn mint_after_create_does_not_relax_quorum_bound() {
+        let env = Env::default();
+        let client = TokenContractClient::new(&env, &env.register_contract(None, TokenContract));
+
+        client.mint(&100);
+        let id = client.create_proposal(&50);
+
+        // Minting after creation must not raise the effective bound.
+        client.mint(&1000);
+        assert_eq!(client.total_supply(), 1100);
+
+        // Raising quorum above the creation-time snapshot must still fail.
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            client.update_quorum(&id, &101);
+        }));
+        assert!(result.is_err());
+
+        // The stored snapshot is unchanged and the quorum is still bounded.
+        let proposal = client.get_proposal(&id);
+        assert_eq!(proposal.supply_snapshot, 100);
+        assert_eq!(proposal.quorum, 50);
+
+        // A quorum within the snapshot is still accepted.
+        client.update_quorum(&id, &100);
+        assert_eq!(client.get_proposal(&id).quorum, 100);
     }
 }
